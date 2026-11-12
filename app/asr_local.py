@@ -35,14 +35,15 @@ _INFER_LOCK = threading.Lock()  # 推理串行
 
 
 def available() -> tuple[bool, str]:
-    """模型与依赖是否就绪。只查文件，不加载模型。"""
+    """模型文件是否就绪。
+
+    ⚠️ 这里**故意不 import funasr/torch**：Windows 上光 import 就要 5–10 秒，
+    而这个函数会被 /api/models、/api/asr/status 频繁调用（前端 5 秒轮询一次），
+    一旦在这里加载依赖，整个页面都会被拖住。依赖缺失会在真正识别时暴露，
+    且错误信息由 _load() 抛出，足够定位。
+    """
     if not (MODEL_DIR / "model.pt").exists():
         return False, f"模型未下载：{MODEL_DIR}"
-    try:
-        import funasr  # noqa: F401
-        import torch  # noqa: F401
-    except Exception as exc:  # noqa: BLE001
-        return False, f"依赖缺失：{exc}"
     return True, "ok"
 
 

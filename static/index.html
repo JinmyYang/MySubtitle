@@ -255,7 +255,7 @@
     <div class="add-row">
       <div class="field grow">
         <label>识别引擎</label>
-        <div class="fixed-model" id="engineLabel">本地 · Fun-ASR-Nano</div>
+        <select id="engineSelect" title="选择识别引擎"></select>
       </div>
       <button class="btn solid lg" id="submitBtn" disabled>开始识别</button>
     </div>
@@ -291,7 +291,7 @@
 const $ = id => document.getElementById(id);
 let selectedFile = null;
 let presets = [], defaultPreset = 'default';
-let engines = [], defaultEngine = 'local', localReady = false;
+let engines = [], defaultEngine = 'local', localReady = false, cloudReady = false;
 let activeTab = 'audio';
 let pv = null;
 let assetCache = [];
@@ -386,8 +386,14 @@ async function init() {
   engines = d.engines || [];
   defaultEngine = d.default_engine || 'local';
   localReady = !!d.local_ready;
-  const cur = engines.find(e => e.code === defaultEngine);
-  if (cur) $('engineLabel').textContent = cur.name;
+  cloudReady = !!d.cloud_ready;
+  $('engineSelect').innerHTML = engines.map(g => {
+    const off = (g.code === 'local' && !localReady) || (g.code === 'cloud' && !cloudReady);
+    const tag = g.code === 'local' && !localReady ? '（未就绪）'
+              : g.code === 'cloud' && !cloudReady ? '（未配置 Key）' : '';
+    return `<option value="${esc(g.code)}"${g.code === defaultEngine ? ' selected' : ''}`
+      + `${off ? ' disabled' : ''}>${esc(g.name)}${tag}</option>`;
+  }).join('');
   refreshAsrState();
   setInterval(refreshAsrState, 5000);
   refreshAssets();
@@ -414,7 +420,7 @@ $('submitBtn').onclick = async () => {
   if (!selectedFile) return;
   const fd = new FormData();
   fd.append('file', selectedFile);
-  fd.append('engine', defaultEngine);
+  fd.append('engine', $('engineSelect').value || defaultEngine);
   $('submitBtn').disabled = true;
   try {
     const r = await fetch('/api/jobs', { method: 'POST', body: fd });
@@ -488,9 +494,11 @@ function assetRow(a) {
       + `${d.open ? '收起' : '重新识别'}</button>` + del;
     if (d.open) {
       const eOpts = engines.map(g => {
-        const off = g.code === 'local' && !localReady;
+        const off = (g.code === 'local' && !localReady) || (g.code === 'cloud' && !cloudReady);
+        const tag = g.code === 'local' && !localReady ? '（未就绪）'
+                  : g.code === 'cloud' && !cloudReady ? '（未配置 Key）' : '';
         return `<option value="${esc(g.code)}"${g.code === d.engine ? ' selected' : ''}`
-          + `${off ? ' disabled' : ''}>${esc(g.name)}${off ? '（未就绪）' : ''}</option>`;
+          + `${off ? ' disabled' : ''}>${esc(g.name)}${tag}</option>`;
       }).join('');
       const eField = engines.length > 1
         ? `<select id="e-${a.id}" title="识别引擎" `

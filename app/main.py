@@ -127,6 +127,8 @@ def api_models():
         "local_ready": local_ok,
         "local_hint": local_hint,
         "local_loaded": asr_local.is_loaded(),
+        # 云端要 API Key 才能真正跑，没配就在 UI 里禁掉该选项
+        "cloud_ready": bool(config.API_KEY),
         "presets": config.SPLIT_PRESETS,
         "default_preset": config.DEFAULT_PRESET,
     }
