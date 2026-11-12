@@ -190,6 +190,11 @@ python scripts/regress_export.py  # 断句引擎离线回归：文本无损、�
 
 测试用例数随本地素材增减，找不到样本时会 skip 而不是静默变成"零个用例"。
 
+> **⚠️ 这几个脚本会计费**：`scripts/smoke_test.py`、`scripts/evaluate.py`、
+> `scripts/transcribe.py`、`tests/live_http_check.py` 都会调用真实云端 API
+> （fun-asr 约 0.79 元/小时音频），而且**只覆盖云端引擎**。
+> 本地识别免费：用 Web 界面即可；要脚本化验证本地链路，用 `scripts/asr_local_probe.py`。
+
 ## 已知限制
 
 - **仅普通话**。模型本身支持方言和英日语，但本项目固定按中文识别，未开放切换

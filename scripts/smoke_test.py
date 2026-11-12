@@ -1,5 +1,9 @@
 """冒烟测试：用一小段普通话音频验证 上传 -> 转写 -> SRT 全链路（无头，不启动 Web 服务）。
 
+⚠️ 会调用真实云端 API 并产生费用（fun-asr 约 0.79 元/小时音频）。
+   本脚本只覆盖云端引擎；本地识别免费，直接用 Web 界面，
+   或用 scripts/asr_local_probe.py 验证本地链路。
+
 用法:
     python scripts/smoke_test.py [model] [音频路径]
 """
