@@ -53,6 +53,8 @@ def main() -> int:
         pythoncom.CoUninitialize()
 
     print(f"[完成] {lnk_path}", flush=True)
+    print(f"       指向 {target}", flush=True)
+    print(f"       目标存在 {target.is_file()}", flush=True)
     return 0
 
 
