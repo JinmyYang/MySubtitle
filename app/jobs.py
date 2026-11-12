@@ -26,6 +26,8 @@ STAGES = {
     "submitted": (25, "已提交转写任务"),
     "PENDING": (35, "服务端排队中"),
     "RUNNING": (60, "模型转写中"),
+    "loading_model": (10, "正在加载本地模型（首次约 1 分钟）"),
+    "transcribing": (60, "本地模型识别中"),
     "done": (100, "识别完成，可导出字幕"),
 }
 
@@ -77,7 +79,8 @@ class Job:
     file_path: Path | None      # 上传暂存位置；入库为资产后即置 None
     model: str
     language: str
-    status: str = "queued"  # queued/oss_uploading/submitted/transcribing/done/failed
+    engine: str = "local"       # local / cloud，决定 run_pipeline 走哪条链路
+    status: str = "queued"  # queued/oss_uploading/submitted/loading_model/transcribing/done/failed
     stage: str = "queued"
     progress: int = 0
     error: str = ""
@@ -98,6 +101,7 @@ class Job:
             "id": self.id,
             "filename": self.filename,
             "model": self.model,
+            "engine": self.engine,
             "model_name": ("导入的识别结果" if self.model == "imported" else
                             config.MODELS.get(self.model, {}).get("name", self.model)),
             "language": self.language,
@@ -141,13 +145,14 @@ STORE = assets_mod.AssetStore(config.ASSET_DIR)
 
 
 def create_job(file_path: Path, filename: str, model: str, language: str,
-               audio_asset_id: str = "") -> Job:
+               audio_asset_id: str = "", engine: str = "") -> Job:
     job = Job(
         id=uuid.uuid4().hex[:12],
         filename=filename,
         file_path=file_path,
         model=model,
         language=language,
+        engine=engine or config.default_engine(),
         audio_asset_id=audio_asset_id,
     )
     with _LOCK:
@@ -243,36 +248,16 @@ def _save_segments(job: Job, elapsed_sec: float = 0.0) -> assets_mod.Asset | Non
 
 
 def run_pipeline(job: Job) -> None:
-    """识别流水线：上传音频 -> 提交任务 -> 轮询 -> 把结果登记为中间产物资产。
+    """识别流水线：按 job.engine 分发到本地或云端，产出统一的 segments 资产。
 
     音频资产在上传时就已经入库，识别不再改动它，失败重试用的是同一份文件。
     """
     started = time.time()
     try:
-        _set_stage(job, "oss_uploading")
-        file_url = dashscope_client.upload_file(job.model, job.file_path)
-
-        _set_stage(job, "submitted")
-        job.task_id = dashscope_client.submit_transcription(job.model, file_url)
-
-        job.status = "transcribing"
-
-        def on_poll(task_status: str) -> None:
-            _set_stage(job, task_status or "RUNNING")
-
-        output = dashscope_client.wait_for_task(job.task_id, progress_cb=on_poll)
-        segments = dashscope_client.fetch_segments(output)
-        if not segments:
-            raise RuntimeError("转写结果为空")
-
-        job.segments = segments
-        job.detected_lang = "zh"
-        _set_audio_duration(job, segments)
-        # 识别耗时要在入库前落定：存盘、写索引的时间不该算进识别耗时
-        elapsed = time.time() - started
-        job.elapsed_sec = elapsed
-        _save_segments(job, elapsed_sec=elapsed)
-
+        if job.engine == "local":
+            _pipeline_local(job, started)
+        else:
+            _pipeline_cloud(job, started)
         job.status = "done"
         _set_stage(job, "done")
     except Exception as exc:  # noqa: BLE001 - 任务失败需要完整信息
@@ -280,6 +265,52 @@ def run_pipeline(job: Job) -> None:
         job.error = str(exc)
     finally:
         job.elapsed_sec = time.time() - started
+
+
+def _pipeline_cloud(job: Job, started: float) -> None:
+    """云端：上传音频 -> 提交异步任务 -> 轮询 -> 下载结果。"""
+    _set_stage(job, "oss_uploading")
+    file_url = dashscope_client.upload_file(job.model, job.file_path)
+
+    _set_stage(job, "submitted")
+    job.task_id = dashscope_client.submit_transcription(job.model, file_url)
+
+    job.status = "transcribing"
+
+    def on_poll(task_status: str) -> None:
+        _set_stage(job, task_status or "RUNNING")
+
+    output = dashscope_client.wait_for_task(job.task_id, progress_cb=on_poll)
+    segments = dashscope_client.fetch_segments(output)
+    if not segments:
+        raise RuntimeError("转写结果为空")
+
+    job.segments = segments
+    job.detected_lang = "zh"
+    _set_audio_duration(job, segments)
+    # 识别耗时要在入库前落定：存盘、写索引的时间不该算进识别耗时
+    elapsed = time.time() - started
+    job.elapsed_sec = elapsed
+    _save_segments(job, elapsed_sec=elapsed)
+
+
+def _pipeline_local(job: Job, started: float) -> None:
+    """本地：模型常驻内存，首次识别要等加载（约 40–90s）。"""
+    from . import asr_local
+
+    job.status = "transcribing"
+    _set_stage(job, "transcribing" if asr_local.is_loaded() else "loading_model")
+    segments = asr_local.transcribe(
+        job.file_path, progress_cb=lambda s: _set_stage(job, s))
+    if not segments:
+        raise RuntimeError("本地识别结果为空")
+
+    job.segments = segments
+    job.detected_lang = "zh"
+    _set_audio_duration(job, segments)
+    elapsed = time.time() - started
+    job.elapsed_sec = elapsed
+    _save_segments(job, elapsed_sec=elapsed)
 
 
 def start_job(job: Job) -> None:

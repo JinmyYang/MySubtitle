@@ -285,6 +285,7 @@
 const $ = id => document.getElementById(id);
 let selectedFile = null;
 let presets = [], defaultPreset = 'default';
+let engines = [], defaultEngine = 'local', localReady = false;
 let activeTab = 'audio';
 let pv = null;
 let assetCache = [];
@@ -344,7 +345,7 @@ function emptyState(text) {
 /* ---------- 状态草稿 ---------- */
 function draftOf(id) {
   if (!draft[id]) {
-    draft[id] = { preset: defaultPreset, open: false };
+    draft[id] = { preset: defaultPreset, open: false, engine: defaultEngine };
   }
   return draft[id];
 }
@@ -353,6 +354,9 @@ async function init() {
   const d = await (await fetch('/api/models')).json();
   presets = d.presets;
   defaultPreset = d.default_preset;
+  engines = d.engines || [];
+  defaultEngine = d.default_engine || 'local';
+  localReady = !!d.local_ready;
   refreshAssets();
   refreshJobs();
 }
@@ -377,6 +381,7 @@ $('submitBtn').onclick = async () => {
   if (!selectedFile) return;
   const fd = new FormData();
   fd.append('file', selectedFile);
+  fd.append('engine', defaultEngine);
   $('submitBtn').disabled = true;
   try {
     const r = await fetch('/api/jobs', { method: 'POST', body: fd });
@@ -446,10 +451,19 @@ function assetRow(a) {
     acts = `<button class="btn${d.open ? '' : ' solid'}" onclick="toggleParams('${a.id}')">`
       + `${d.open ? '收起' : '重新识别'}</button>` + del;
     if (d.open) {
+      const eOpts = engines.map(g => {
+        const off = g.code === 'local' && !localReady;
+        return `<option value="${esc(g.code)}"${g.code === d.engine ? ' selected' : ''}`
+          + `${off ? ' disabled' : ''}>${esc(g.name)}${off ? '（未就绪）' : ''}</option>`;
+      }).join('');
+      const eField = engines.length > 1
+        ? `<select id="e-${a.id}" title="识别引擎" `
+          + `onchange="draftOf('${a.id}').engine=this.value">${eOpts}</select>`
+        : `<div class="fixed-model">${esc(engines[0] ? engines[0].name : '本地 · Fun-ASR-Nano')}</div>`;
       panel = `<div class="panel">
         <div class="field">
-          <label>识别模型</label>
-          <div class="fixed-model">Fun-ASR · 普通话</div>
+          <label>识别引擎</label>
+          ${eField}
         </div>
         <button class="btn solid" onclick="transcribe('${a.id}')">开始识别</button>
         <button class="btn" onclick="toggleParams('${a.id}')">取消</button>
@@ -490,7 +504,9 @@ function onPresetChange(id) {
 
 async function transcribe(id) {
   const d = draftOf(id);
-  const r = await fetch(`/api/assets/${id}/transcribe`, { method: 'POST' });
+  const fd = new FormData();
+  fd.append('engine', d.engine || defaultEngine);
+  const r = await fetch(`/api/assets/${id}/transcribe`, { method: 'POST', body: fd });
   if (!r.ok) return alert((await r.json()).detail || '提交失败');
   d.open = false;
   renderAssets();

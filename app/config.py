@@ -66,6 +66,26 @@ MODELS: dict[str, dict] = {
 }
 
 
+# 识别引擎：本地优先。云端保留作对照，等本地稳定后再决定是否裁掉。
+ENGINES: dict[str, dict] = {
+    "local": {"name": "本地 · Fun-ASR-Nano", "default": True},
+    "cloud": {"name": "云端 · Fun-ASR", "default": False},
+}
+DEFAULT_ENGINE = "local"
+# 本地识别写进资产/任务的模型名（与已导入的历史资产保持一致）
+LOCAL_MODEL_TAG = "Fun-ASR-Nano 本地"
+
+
+def default_engine() -> str:
+    """默认引擎。本地模型不可用时回退云端，避免用户点了就报错。"""
+    if DEFAULT_ENGINE == "local":
+        from . import asr_local  # 延迟导入，避免与 config 循环引用
+        ok, _ = asr_local.available()
+        if not ok:
+            return "cloud"
+    return DEFAULT_ENGINE
+
+
 def default_model() -> str:
     return next(iter(MODELS))
 

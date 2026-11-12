@@ -25,7 +25,7 @@ from fastapi import FastAPI, File, Form, HTTPException, Request, Response, Uploa
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
-from . import assets as assets_mod, config, jobs, srt
+from . import assets as assets_mod, asr_local, config, jobs, srt
 
 
 def _cleanup_stale_uploads() -> int:
@@ -112,15 +112,36 @@ async def _local_only_guard(request: Request, call_next):
 
 @app.get("/api/models")
 def api_models():
+    local_ok, local_hint = asr_local.available()
     return {
         "models": [
             {"code": code, "name": spec["name"], "default": spec.get("default", False)}
             for code, spec in config.MODELS.items()
         ],
         "default_model": config.default_model(),
+        "engines": [
+            {"code": code, "name": spec["name"], "default": spec.get("default", False)}
+            for code, spec in config.ENGINES.items()
+        ],
+        "default_engine": config.default_engine(),
+        "local_ready": local_ok,
+        "local_hint": local_hint,
         "presets": config.SPLIT_PRESETS,
         "default_preset": config.DEFAULT_PRESET,
     }
+
+
+def _resolve_engine(engine: str) -> tuple[str, str]:
+    """校验引擎并返回 (engine, 写进资产/任务的模型名)。"""
+    engine = engine or config.default_engine()
+    if engine not in config.ENGINES:
+        raise HTTPException(400, f"不支持的识别引擎: {engine}")
+    if engine == "local":
+        ok, hint = asr_local.available()
+        if not ok:
+            raise HTTPException(400, f"本地引擎不可用：{hint}")
+        return engine, config.LOCAL_MODEL_TAG
+    return engine, config.default_model()
 
 
 def _safe_name(name: str) -> str:
@@ -129,9 +150,9 @@ def _safe_name(name: str) -> str:
 
 
 @app.post("/api/jobs")
-def api_create_job(file: UploadFile = File(...)):
-    """上传普通话音频并用 Fun-ASR 启动识别。同步路由：落盘交给线程池更稳。"""
-    model = config.default_model()
+def api_create_job(file: UploadFile = File(...), engine: str = Form("")):
+    """上传普通话音频并启动识别。同步路由：落盘交给线程池更稳。"""
+    engine, model = _resolve_engine(engine)
     filename = _safe_name(file.filename)
     ext = Path(filename).suffix.lower()
     if ext not in config.ALLOWED_EXTS:
@@ -154,7 +175,7 @@ def api_create_job(file: UploadFile = File(...)):
         asset = jobs.STORE.add_audio(tmp, filename, "zh", model)
         job = jobs.create_job(file_path=jobs.STORE.path_of(asset),
                               filename=filename, model=model, language="zh",
-                              audio_asset_id=asset.id)
+                              audio_asset_id=asset.id, engine=engine)
     except HTTPException:
         tmp.unlink(missing_ok=True)
         raise
@@ -190,17 +211,17 @@ def api_list_assets(kind: str = ""):
 
 
 @app.post("/api/assets/{asset_id}/transcribe")
-def api_transcribe_asset(asset_id: str):
+def api_transcribe_asset(asset_id: str, engine: str = Form("")):
     """拿一份已保存的普通话音频重新识别。"""
     asset = jobs.STORE.get(asset_id)
     if asset is None or asset.kind != assets_mod.KIND_AUDIO:
         raise HTTPException(404, "音频资产不存在")
-    model = config.default_model()
+    engine, model = _resolve_engine(engine)
     src = jobs.STORE.path_of(asset)
     if not src.exists():
         raise HTTPException(404, "音频文件已丢失")
     job = jobs.create_job(file_path=src, filename=asset.name, model=model,
-                          language="zh", audio_asset_id=asset.id)
+                          language="zh", audio_asset_id=asset.id, engine=engine)
     jobs.start_job(job)
     return job.to_dict()
 
