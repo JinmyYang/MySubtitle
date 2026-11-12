@@ -170,7 +170,7 @@ def main() -> int:
 
     url = f"http://{HOST}:{port}/"
     print("=" * 44)
-    print("  音频转字幕工具（阿里云百炼 ASR）")
+    print("  MySubtitle - 本地音频转字幕")
     print(f"  地址：{url}")
     print("  关闭本窗口即停止服务")
     print("=" * 44, flush=True)

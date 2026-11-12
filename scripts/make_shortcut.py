@@ -13,8 +13,8 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-BAT_NAME = "本地中文字幕王.bat"
-SHORTCUT_NAME = "本地中文字幕王"
+BAT_NAME = "MySubtitle.bat"
+SHORTCUT_NAME = "MySubtitle"
 
 
 def desktop_dir() -> Path:
@@ -46,7 +46,7 @@ def main() -> int:
         sc = shell.CreateShortcut(str(lnk_path))
         sc.TargetPath = str(target)
         sc.WorkingDirectory = str(ROOT)     # 批处理里虽有 %~dp0，这里写对更稳
-        sc.Description = "本地中文字幕王（本地 ASR 版）：一键启动服务并打开页面"
+        sc.Description = "MySubtitle：本地音频转字幕，一键启动服务并打开页面"
         sc.WindowStyle = 1                  # 1 = 正常窗口；关窗即停服务
         sc.Save()
     finally:
