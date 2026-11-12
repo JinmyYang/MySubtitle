@@ -28,3 +28,6 @@ scripts/to_trash.py
 
 # 本地笔记
 .workbuddy/
+
+# 本地截图原图（README 用的是 docs/images/ 下重命名后的副本）
+截图/
