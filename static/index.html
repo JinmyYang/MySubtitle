@@ -428,6 +428,10 @@ function assetRow(a) {
   if (a.cue_count) facts.push(a.kind === 'segments' ? `${a.cue_count} 句` : `${a.cue_count} 条`);
   if (a.duration_sec) facts.push(fmtDur(a.duration_sec));
   if (a.size_bytes) facts.push(fmtSize(a.size_bytes));
+  /* 识别耗时：只有「识别结果」有意义；导出字幕是毫秒级，标了反而误导 */
+  if (a.kind === 'segments' && a.elapsed_sec) {
+    facts.push(`识别 ${Number(a.elapsed_sec).toFixed(1)}s`);
+  }
   facts.push(fmtTime(a.created_at));
 
   const meta = (a.origin && a.origin !== '—'

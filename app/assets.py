@@ -57,6 +57,7 @@ class Asset:
     cue_count: int = 0
     # —— 其它 ——
     duration_sec: float = 0.0
+    elapsed_sec: float = 0.0  # 识别耗时（秒）；仅识别结果有意义，0 表示未记录
     size_bytes: int = 0
     source_id: str = ""       # 由哪个资产生成
     note: str = ""            # 备注：索引重建时说明"由来未知"等
@@ -302,7 +303,8 @@ class AssetStore:
 
     def add_segments(self, segments: list[dict], name: str, language: str,
                      model: str, source_id: str = "",
-                     duration_sec: float = 0.0) -> Asset:
+                     duration_sec: float = 0.0,
+                     elapsed_sec: float = 0.0) -> Asset:
         uid = uuid.uuid4().hex[:12]
         stem = safe_name(Path(name).stem or name)
         rel = f"{KIND_SEGMENTS}/{uid}_{stem}.json"
@@ -312,7 +314,8 @@ class AssetStore:
         return self._register(Asset(
             id=uid, kind=KIND_SEGMENTS, name=f"{stem}（识别结果）", file=rel,
             language=language, model=model, source_id=source_id,
-            duration_sec=duration_sec, size_bytes=dst.stat().st_size,
+            duration_sec=duration_sec, elapsed_sec=elapsed_sec,
+            size_bytes=dst.stat().st_size,
             cue_count=len(segments),
         ))
 

@@ -229,14 +229,14 @@ def _set_audio_duration(job: Job, segments: list) -> None:
         job.duration_sec = max(0.0, float(segments[-1].get("end", 0)) / 1000.0)
 
 
-def _save_segments(job: Job) -> assets_mod.Asset | None:
+def _save_segments(job: Job, elapsed_sec: float = 0.0) -> assets_mod.Asset | None:
     """把识别结果登记为"中间产物"资产（可反复导出、可复用）。"""
     if not job.segments:
         return None
     asset = STORE.add_segments(
         job.segments, job.filename, job.detected_lang or job.language,
         job.model, source_id=job.audio_asset_id,
-        duration_sec=job.duration_sec)
+        duration_sec=job.duration_sec, elapsed_sec=elapsed_sec)
     job.segments_asset_id = asset.id
     job.segments_file = STORE.path_of(asset)
     return asset
@@ -268,7 +268,10 @@ def run_pipeline(job: Job) -> None:
         job.segments = segments
         job.detected_lang = "zh"
         _set_audio_duration(job, segments)
-        _save_segments(job)
+        # 识别耗时要在入库前落定：存盘、写索引的时间不该算进识别耗时
+        elapsed = time.time() - started
+        job.elapsed_sec = elapsed
+        _save_segments(job, elapsed_sec=elapsed)
 
         job.status = "done"
         _set_stage(job, "done")

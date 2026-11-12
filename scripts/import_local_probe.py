@@ -139,8 +139,10 @@ def main() -> int:
                       if a.kind == assets_mod.KIND_AUDIO
                       and Path(a.name).stem == stem), None)
 
+        elapsed = float(probe.get("_elapsed_sec") or 0)
+        speed = f"  识别 {elapsed:.1f}s" if elapsed else "  识别耗时未记录"
         print(f"\n素材: {stem}")
-        print(f"  句数 {len(segs)}  时长 {duration:.1f}s  "
+        print(f"  句数 {len(segs)}  时长 {duration:.1f}s{speed}  "
               f"音频资产 {'有 ' + audio.id if audio else '无（预览时没有音频）'}")
         print(f"  首句: [{segs[0]['begin']}ms] {segs[0]['text'][:30]}")
         print(f"  末句: [{segs[-1]['end']}ms] {segs[-1]['text'][:30]}")
@@ -158,7 +160,7 @@ def main() -> int:
 
         seg_asset = store.add_segments(
             segs, stem, "zh", MODEL_TAG, source_id=audio.id if audio else "",
-            duration_sec=duration)
+            duration_sec=duration, elapsed_sec=elapsed)
         print(f"  [已导入] 识别结果 {seg_asset.id}")
 
         with tempfile.TemporaryDirectory(prefix="import_sub_") as tmp:
