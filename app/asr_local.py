@@ -1,7 +1,8 @@
 """本地 Fun-ASR-Nano 识别后端。
 
-模型常驻内存：首次识别时懒加载（约 40–90s），之后所有任务复用同一实例；
-推理用锁串行，避免两个任务同时进 GPU 把 8GB 显存挤爆。
+模型按需加载、常驻复用，支持手动卸载释放显存（网页开着但暂时不识别时可以把
+4GB 显存还给别的程序）。加载锁保证只加载一次，推理锁保证串行——并发进 GPU
+会直接把 8GB 显存挤爆。
 
 输出的 segments 与云端 Fun-ASR 同构（begin/end/text/words，单位毫秒），
 可直接喂给现有断句引擎。
@@ -13,6 +14,7 @@
 """
 from __future__ import annotations
 
+import gc
 import sys
 import threading
 import time
@@ -64,7 +66,8 @@ def _load():
             trust_remote_code=True,
             vad_model="fsmn-vad",
             vad_kwargs={"max_single_segment_time": 30000},
-            punc_model="ct-punc",
+            # 不配 punc_model：Fun-ASR-Nano 的文本自带标点，切句用的是 CTC token，
+            # 用不上 ct-punc；省掉它能少读约 1.1GB 权重（加载更快）。
             device="cuda:0" if torch.cuda.is_available() else "cpu",
             disable_update=True,
         )
@@ -75,6 +78,27 @@ def _load():
             kwargs["remote_code"] = str(CODE_DIR / "model.py")
         _MODEL = AutoModel(**kwargs)
         return _MODEL
+
+
+def unload() -> tuple[bool, str]:
+    """卸载模型并释放显存。正在识别时拒绝，避免推理中途被打断而崩掉。"""
+    global _MODEL
+    if _MODEL is None:
+        return False, "模型未加载"
+    if not _INFER_LOCK.acquire(blocking=False):
+        return False, "正在识别中，无法释放"
+    try:
+        _MODEL = None
+        gc.collect()
+        try:
+            import torch
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+        except Exception:  # noqa: BLE001 - 释放失败不影响主流程
+            pass
+        return True, "已释放显存"
+    finally:
+        _INFER_LOCK.release()
 
 
 def _split_sentences(text: str) -> list[tuple[int, int]]:
@@ -152,16 +176,22 @@ def _to_segments(item: dict) -> list[dict]:
     return segs
 
 
-def transcribe(file_path: str | Path, progress_cb=None) -> list[dict]:
-    """识别一个音频文件，返回句级 segments（毫秒）。
+def transcribe(file_path: str | Path, progress_cb=None) -> tuple[list[dict], dict]:
+    """识别一个音频文件，返回 (segments, timing)。
 
-    progress_cb(stage: str) 会在关键节点被调用，供任务状态展示。
+    timing 把两段耗时分开，互不混淆：
+      load_sec   本次为加载模型花的时间（复用已加载模型时为 0）
+      infer_sec  纯推理耗时（不含加载）
     """
+    was_loaded = _MODEL is not None
+    t_load = time.time()
     model = _load()
+    load_sec = 0.0 if was_loaded else time.time() - t_load
+
     if progress_cb:
         progress_cb("transcribing")
 
-    t0 = time.time()
+    t_infer = time.time()
     with _INFER_LOCK:
         res = model.generate(
             input=[str(file_path)],
@@ -171,10 +201,7 @@ def transcribe(file_path: str | Path, progress_cb=None) -> list[dict]:
             itn=True,
             sentence_timestamp=True,
         )
-    if not res or not res[0]:
-        return []
-    segments = _to_segments(res[0])
-    if progress_cb:
-        progress_cb("transcribing")
-    _ = time.time() - t0
-    return segments
+    infer_sec = time.time() - t_infer
+
+    segments = _to_segments(res[0]) if res and res[0] else []
+    return segments, {"load_sec": round(load_sec, 2), "infer_sec": round(infer_sec, 2)}

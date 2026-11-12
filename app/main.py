@@ -126,9 +126,26 @@ def api_models():
         "default_engine": config.default_engine(),
         "local_ready": local_ok,
         "local_hint": local_hint,
+        "local_loaded": asr_local.is_loaded(),
         "presets": config.SPLIT_PRESETS,
         "default_preset": config.DEFAULT_PRESET,
     }
+
+
+@app.get("/api/asr/status")
+def api_asr_status():
+    """本地模型状态：页面用来决定「释放显存」按钮是否可点。"""
+    ok, hint = asr_local.available()
+    return {"ready": ok, "hint": hint, "loaded": asr_local.is_loaded()}
+
+
+@app.post("/api/asr/unload")
+def api_asr_unload():
+    """卸载本地模型、释放显存。正在识别时拒绝，避免打断推理。"""
+    ok, msg = asr_local.unload()
+    if not ok:
+        raise HTTPException(400, msg)
+    return {"ok": True, "message": msg, "loaded": asr_local.is_loaded()}
 
 
 def _resolve_engine(engine: str) -> tuple[str, str]:

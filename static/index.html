@@ -118,6 +118,10 @@
   }
   .link:hover { color: #A5A7FA; }
   .foot-note { margin-top: 14px; padding-top: 13px; border-top: 1px solid var(--line); font-size: 12px; color: var(--fg3); }
+  .asr-bar { display: flex; align-items: center; gap: 10px; margin-top: 12px; font-size: 12px; color: var(--fg3); }
+  .asr-bar .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--fg3); flex: none; }
+  .asr-bar .dot.on { background: var(--ok); }
+  .asr-bar .btn { padding: 4px 10px; font-size: 12px; }
 
   /* ---------- 标签页 ---------- */
   .tabs { display: flex; gap: 7px; flex-wrap: wrap; margin: 15px 0 3px; }
@@ -250,8 +254,8 @@
 
     <div class="add-row">
       <div class="field grow">
-        <label>识别模型</label>
-        <div class="fixed-model">Fun-ASR · 普通话</div>
+        <label>识别引擎</label>
+        <div class="fixed-model" id="engineLabel">本地 · Fun-ASR-Nano</div>
       </div>
       <button class="btn solid lg" id="submitBtn" disabled>开始识别</button>
     </div>
@@ -259,6 +263,8 @@
     <div class="foot-note">
       已有别处导出的识别结果？<button class="link" id="importBtn">导入 .json</button> 免重新识别，直接进入断句环节。
     </div>
+
+    <div class="asr-bar" id="asrBar"></div>
   </section>
 
   <section class="card" id="jobCard" style="display:none">
@@ -349,6 +355,29 @@ function draftOf(id) {
   }
   return draft[id];
 }
+/* ---------- 本地模型状态 ---------- */
+async function refreshAsrState() {
+  try {
+    const s = await (await fetch('/api/asr/status')).json();
+    const bar = $('asrBar');
+    if (!s.ready) {
+      bar.innerHTML = `<span class="dot"></span>本地模型未就绪：${esc(s.hint || '')}`;
+      return;
+    }
+    bar.innerHTML = s.loaded
+      ? `<span class="dot on"></span>本地模型已加载（常驻显存约 4GB）`
+        + `<button class="btn" onclick="unloadModel()">释放显存</button>`
+      : `<span class="dot"></span>本地模型未加载，首次识别会自动加载（约 1 分钟）`;
+  } catch { /* 服务正在重启，下次再试 */ }
+}
+
+async function unloadModel() {
+  const r = await fetch('/api/asr/unload', { method: 'POST' });
+  const d = await r.json().catch(() => ({}));
+  if (!r.ok) return alert(d.detail || '释放失败');
+  refreshAsrState();
+}
+
 /* ---------- 初始化 ---------- */
 async function init() {
   const d = await (await fetch('/api/models')).json();
@@ -357,6 +386,10 @@ async function init() {
   engines = d.engines || [];
   defaultEngine = d.default_engine || 'local';
   localReady = !!d.local_ready;
+  const cur = engines.find(e => e.code === defaultEngine);
+  if (cur) $('engineLabel').textContent = cur.name;
+  refreshAsrState();
+  setInterval(refreshAsrState, 5000);
   refreshAssets();
   refreshJobs();
 }
@@ -430,18 +463,21 @@ function switchTab(code) { activeTab = code; refreshAssets(); }
 
 function assetRow(a) {
   const facts = [];
-  if (a.cue_count) facts.push(a.kind === 'segments' ? `${a.cue_count} 句` : `${a.cue_count} 条`);
-  if (a.duration_sec) facts.push(fmtDur(a.duration_sec));
-  if (a.size_bytes) facts.push(fmtSize(a.size_bytes));
-  /* 识别耗时：只有「识别结果」有意义；导出字幕是毫秒级，标了反而误导 */
+  const addFact = (text, title) => facts.push({ text, title: title || '' });
+  if (a.cue_count) addFact(a.kind === 'segments' ? `${a.cue_count} 句` : `${a.cue_count} 条`);
+  if (a.duration_sec) addFact(fmtDur(a.duration_sec));
+  if (a.size_bytes) addFact(fmtSize(a.size_bytes));
+  /* 识别耗时只算纯推理；模型加载是环境成本，放 title 里单独告知 */
   if (a.kind === 'segments' && a.elapsed_sec) {
-    facts.push(`识别 ${Number(a.elapsed_sec).toFixed(1)}s`);
+    const load = Number(a.load_sec) || 0;
+    addFact(`识别 ${Number(a.elapsed_sec).toFixed(1)}s`,
+            load ? `本次另外花了 ${load.toFixed(1)}s 加载模型，未计入识别耗时` : '');
   }
-  facts.push(fmtTime(a.created_at));
+  addFact(fmtTime(a.created_at));
 
   const meta = (a.origin && a.origin !== '—'
       ? `<span class="origin">${esc(a.origin)}</span>` : '')
-    + facts.map(f => `<span>${esc(f)}</span>`).join('');
+    + facts.map(f => `<span${f.title ? ` title="${esc(f.title)}"` : ''}>${esc(f.text)}</span>`).join('');
 
   const d = draftOf(a.id);
   let acts = '', panel = '';

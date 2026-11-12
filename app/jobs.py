@@ -91,6 +91,7 @@ class Job:
     created_at: float = field(default_factory=time.time)
     duration_sec: float = 0.0          # 音频时长（秒）
     elapsed_sec: float = 0.0           # 本次处理耗时（秒）；导入的任务为 0
+    load_sec: float = 0.0              # 模型加载耗时（秒），仅本地引擎；与识别耗时分开记
     # 关联的资产（音频 -> 中间产物 -> 字幕 的链条）
     audio_asset_id: str = ""
     segments_asset_id: str = ""
@@ -114,6 +115,7 @@ class Job:
             "created_at": self.created_at,
             "duration_sec": round(self.duration_sec, 1),
             "elapsed_sec": round(self.elapsed_sec, 1),
+            "load_sec": round(self.load_sec, 1),
             "export_count": len(self.exports),
             "audio_asset_id": self.audio_asset_id,
             "segments_asset_id": self.segments_asset_id,
@@ -234,14 +236,16 @@ def _set_audio_duration(job: Job, segments: list) -> None:
         job.duration_sec = max(0.0, float(segments[-1].get("end", 0)) / 1000.0)
 
 
-def _save_segments(job: Job, elapsed_sec: float = 0.0) -> assets_mod.Asset | None:
+def _save_segments(job: Job, elapsed_sec: float = 0.0,
+                   load_sec: float = 0.0) -> assets_mod.Asset | None:
     """把识别结果登记为"中间产物"资产（可反复导出、可复用）。"""
     if not job.segments:
         return None
     asset = STORE.add_segments(
         job.segments, job.filename, job.detected_lang or job.language,
         job.model, source_id=job.audio_asset_id,
-        duration_sec=job.duration_sec, elapsed_sec=elapsed_sec)
+        duration_sec=job.duration_sec, elapsed_sec=elapsed_sec,
+        load_sec=load_sec)
     job.segments_asset_id = asset.id
     job.segments_file = STORE.path_of(asset)
     return asset
@@ -295,12 +299,12 @@ def _pipeline_cloud(job: Job, started: float) -> None:
 
 
 def _pipeline_local(job: Job, started: float) -> None:
-    """本地：模型常驻内存，首次识别要等加载（约 40–90s）。"""
+    """本地：模型按需加载，加载耗时单独记录，不混进识别耗时。"""
     from . import asr_local
 
     job.status = "transcribing"
     _set_stage(job, "transcribing" if asr_local.is_loaded() else "loading_model")
-    segments = asr_local.transcribe(
+    segments, timing = asr_local.transcribe(
         job.file_path, progress_cb=lambda s: _set_stage(job, s))
     if not segments:
         raise RuntimeError("本地识别结果为空")
@@ -308,9 +312,11 @@ def _pipeline_local(job: Job, started: float) -> None:
     job.segments = segments
     job.detected_lang = "zh"
     _set_audio_duration(job, segments)
-    elapsed = time.time() - started
-    job.elapsed_sec = elapsed
-    _save_segments(job, elapsed_sec=elapsed)
+    # elapsed_sec 只放纯推理时间；模型加载是环境成本，单独存 load_sec
+    job.elapsed_sec = timing["infer_sec"]
+    job.load_sec = timing["load_sec"]
+    _save_segments(job, elapsed_sec=timing["infer_sec"],
+                   load_sec=timing["load_sec"])
 
 
 def start_job(job: Job) -> None:
