@@ -1,0 +1,20 @@
+# 本地语音识别依赖（可选）
+#
+# 不用本地引擎、只走云端 Fun-ASR 的话，本文件可以不装。
+#
+# ⚠️ 安装顺序：先装 torch / torchaudio，再装 funasr。
+#    torch 不要直接从 PyPI 装（Windows 上那是 CPU 版），按显卡 CUDA 版本选官方索引：
+#      CUDA 12.6:  pip install torch torchaudio --index-url https://download.pytorch.org/whl/cu126
+#      CPU only:   pip install torch torchaudio --index-url https://download.pytorch.org/whl/cpu
+#
+# ⚠️ torchaudio 版本不必和 torch 一致：Fun-ASR-Nano 只在 forced_align 里用到它，
+#    内部会先 .cpu()，CPU 版即可。实测 torch 2.14 + torchaudio 2.11 可以共存。
+
+funasr>=1.4.25
+modelscope>=1.40
+
+# fbank 特征提取后端。funasr 把它做成「可选依赖」，pip 依赖树里看不到，
+# 但运行时没有会直接抛：
+#   ImportError: torchaudio is not installed and neither is the kaldi-native-fbank fallback
+# 纯 C++ 实现，不依赖 torch，比装 torchaudio 更省心。
+kaldi-native-fbank>=1.23

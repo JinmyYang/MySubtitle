@@ -1,9 +1,8 @@
-"""在桌面生成「本地中文字幕王」快捷方式（指向项目根目录的 .bat）。
+"""在桌面生成快捷方式（指向项目根目录的 .bat）。
 
 为什么要单独写个脚本：创建 .lnk 需要 WScript.Shell 这个 COM 对象，
-PowerShell 工具会以"COM 可执行任意代码"为由拦掉；pywin32 在本机是装好的，
-用它做同样的事既干净、又能留个可复现的记录——以后挪了目录或换了机器，
-跑一次 `python scripts/make_shortcut.py` 就有桌面图标了。
+部分环境会以"COM 可执行任意代码"为由把 PowerShell 拦掉；用 pywin32 做同样的事
+更干净，也留了个可复现的记录——以后挪了目录或换了机器，跑一次就有桌面图标。
 
 用法: python scripts/make_shortcut.py
 """
@@ -14,8 +13,6 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-# 本项目是从「启动中文字幕王」（云端 Fun-ASR 版）分出来的本地 ASR 版，
-# 名字上刻意区分，两个桌面快捷方式互不覆盖。
 BAT_NAME = "本地中文字幕王.bat"
 SHORTCUT_NAME = "本地中文字幕王"
 
