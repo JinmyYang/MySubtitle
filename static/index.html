@@ -1,0 +1,614 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>音频转字幕 · 百炼 ASR</title>
+<style>
+  :root {
+    color-scheme: dark;
+    --bg: #0A0C11;
+    --card: #12151C;
+    --card2: #171B24;
+    --card3: #1D222D;
+    --line: #232936;
+    --line2: #313949;
+    --fg: #E8EAF0;
+    --fg2: #98A0B2;
+    --fg3: #656D7F;
+    --accent: #6366F1;
+    --accent2: #8B8DF7;
+    --accent-bg: rgba(99,102,241,.14);
+    --accent-line: rgba(99,102,241,.45);
+    --ok: #34D399;
+    --warn: #FBBF24;
+    --err: #F87171;
+    --mono: ui-monospace, "Cascadia Mono", "SF Mono", Consolas, monospace;
+    --r: 14px;
+    --r-sm: 9px;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: var(--bg); color: var(--fg);
+    font-family: "Segoe UI", "Microsoft YaHei", system-ui, sans-serif;
+    font-size: 13px; line-height: 1.55;
+    min-height: 100vh; padding: 40px 20px 72px;
+    -webkit-font-smoothing: antialiased;
+  }
+  .wrap { max-width: 920px; margin: 0 auto; }
+
+  /* ---------- 头部 ---------- */
+  .hero { display: flex; align-items: center; gap: 13px; margin-bottom: 26px; }
+  .hero .mark {
+    width: 40px; height: 40px; border-radius: 11px; flex-shrink: 0;
+    display: grid; place-items: center;
+    background: var(--accent-bg); border: 1px solid var(--accent-line); color: var(--accent2);
+  }
+  .hero h1 { font-size: 19px; font-weight: 600; letter-spacing: .2px; }
+  .hero p { font-size: 12px; color: var(--fg3); margin-top: 3px; }
+
+  /* ---------- 卡片 ---------- */
+  .card {
+    background: var(--card); border: 1px solid var(--line);
+    border-radius: var(--r); padding: 20px; margin-bottom: 14px;
+  }
+  .card-head { display: flex; align-items: center; gap: 9px; }
+  .card-head h2 { font-size: 14px; font-weight: 600; }
+  .cnt {
+    font-size: 11.5px; color: var(--fg3); font-variant-numeric: tabular-nums;
+    background: var(--card2); border: 1px solid var(--line);
+    border-radius: 20px; padding: 1px 9px;
+  }
+
+  /* ---------- 上传区 ---------- */
+  .drop {
+    border: 1.5px dashed var(--line2); border-radius: var(--r-sm);
+    padding: 30px 20px; text-align: center; cursor: pointer;
+    transition: border-color .18s, background .18s;
+  }
+  .drop:hover, .drop.over { border-color: var(--accent); background: var(--accent-bg); }
+  .drop .mark { color: var(--fg3); margin-bottom: 9px; transition: color .18s; }
+  .drop:hover .mark, .drop.over .mark { color: var(--accent2); }
+  .drop .t { font-size: 13.5px; color: var(--fg2); }
+  .drop .t .fname { color: var(--accent2); font-weight: 500; word-break: break-all; }
+  .drop .t .fsize { color: var(--fg3); font-size: 12px; }
+  .drop .hint { font-size: 11.5px; color: var(--fg3); margin-top: 6px; }
+
+  .add-row { display: flex; gap: 12px; align-items: flex-end; margin-top: 18px; flex-wrap: wrap; }
+  .field { display: flex; flex-direction: column; gap: 6px; }
+  .field.grow { flex: 1 1 200px; min-width: 0; }
+  .field label { font-size: 11.5px; color: var(--fg3); }
+  select, input[type=text], input[type=number] {
+    font: inherit; font-size: 12.5px; color: var(--fg);
+    background: var(--card2); border: 1px solid var(--line);
+    border-radius: var(--r-sm); padding: 8px 10px; outline: none;
+    transition: border-color .15s, box-shadow .15s; width: 100%;
+  }
+  select { cursor: pointer; }
+  .fixed-model {
+    font-size: 12.5px; color: var(--fg2);
+    background: var(--card2); border: 1px solid var(--line);
+    border-radius: var(--r-sm); padding: 8px 10px;
+  }
+  select:hover, input:hover { border-color: var(--line2); }
+  select:focus, input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-bg); }
+  input::placeholder { color: var(--fg3); }
+
+  /* ---------- 按钮 ---------- */
+  .btn {
+    font: inherit; font-size: 12px; line-height: 1;
+    display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+    padding: 8px 14px; border-radius: var(--r-sm); cursor: pointer;
+    background: var(--card2); border: 1px solid var(--line); color: var(--fg2);
+    text-decoration: none; white-space: nowrap;
+    transition: background .15s, border-color .15s, color .15s, opacity .15s;
+  }
+  .btn:hover { background: var(--card3); border-color: var(--line2); color: var(--fg); }
+  .btn.solid {
+    background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 500;
+  }
+  .btn.solid:hover { background: #7578F3; border-color: #7578F3; color: #fff; }
+  .btn.lg { padding: 10px 20px; font-size: 13px; }
+  .btn.danger:hover { border-color: rgba(248,113,113,.45); color: var(--err); background: rgba(248,113,113,.09); }
+  .btn:disabled { opacity: .38; cursor: not-allowed; }
+  .btn:disabled:hover { background: var(--accent); border-color: var(--accent); }
+  .link {
+    font: inherit; font-size: 12px; color: var(--accent2); background: none; border: none;
+    cursor: pointer; padding: 0; border-bottom: 1px solid var(--accent-line);
+  }
+  .link:hover { color: #A5A7FA; }
+  .foot-note { margin-top: 14px; padding-top: 13px; border-top: 1px solid var(--line); font-size: 12px; color: var(--fg3); }
+
+  /* ---------- 标签页 ---------- */
+  .tabs { display: flex; gap: 7px; flex-wrap: wrap; margin: 15px 0 3px; }
+  .tab {
+    display: inline-flex; align-items: center; gap: 7px;
+    padding: 6px 13px; border-radius: 99px; cursor: pointer;
+    background: var(--card2); border: 1px solid var(--line); color: var(--fg2);
+    font-size: 12.5px; transition: .15s;
+  }
+  .tab:hover { border-color: var(--line2); color: var(--fg); }
+  .tab.on { background: var(--accent-bg); border-color: var(--accent-line); color: var(--accent2); }
+  .tab .n { font-size: 11px; opacity: .6; font-variant-numeric: tabular-nums; }
+  .tab.on .n { opacity: .9; }
+
+  /* ---------- 资产行 ---------- */
+  .item { border-radius: 11px; padding: 0 10px; margin: 0 -10px; transition: background .15s; }
+  .item:hover { background: rgba(255,255,255,.024); }
+  .item.open { background: rgba(99,102,241,.055); }
+  .row { display: flex; align-items: center; gap: 12px; padding: 13px 0; flex-wrap: wrap; }
+  .ico {
+    width: 34px; height: 34px; border-radius: 10px; flex-shrink: 0;
+    display: grid; place-items: center;
+    background: var(--card2); border: 1px solid var(--line);
+  }
+  .ico.a { color: #A5B4FC; }
+  .ico.s { color: #7DD3FC; }
+  .ico.t { color: #6EE7B7; }
+  .main { flex: 1 1 240px; min-width: 0; }
+  .name { font-size: 13.5px; line-height: 1.4; word-break: break-all; }
+  .name.pick { cursor: pointer; }
+  .name.pick:hover { color: var(--accent2); }
+  .meta { display: flex; flex-wrap: wrap; gap: 3px 16px; margin-top: 4px; font-size: 11.5px; color: var(--fg3); }
+  .meta > span { position: relative; }
+  .meta > span + span::before {
+    content: '·'; position: absolute; left: -10px; color: var(--fg3); opacity: .55;
+  }
+  .meta .origin { color: var(--fg2); }
+  .acts { display: flex; align-items: center; gap: 7px; flex-wrap: wrap; margin-left: auto; }
+  .acts input { width: 76px; text-align: center; font-variant-numeric: tabular-nums; }
+  .acts select { width: auto; min-width: 132px; }
+
+  /* ---------- 行内展开面板 ---------- */
+  .panel {
+    display: flex; gap: 12px; align-items: flex-end; flex-wrap: wrap;
+    padding: 13px 14px; margin: 0 0 13px;
+    background: var(--card2); border: 1px solid var(--line); border-radius: var(--r-sm);
+  }
+  .panel .field select { width: auto; min-width: 176px; }
+
+  /* ---------- 空状态 ---------- */
+  .empty { text-align: center; padding: 34px 12px 30px; color: var(--fg3); font-size: 12.5px; }
+  .empty svg { color: var(--line2); margin-bottom: 10px; }
+  .empty .e-t { color: var(--fg2); margin-bottom: 4px; }
+
+  /* ---------- 任务 ---------- */
+  .job { padding: 13px 0; }
+  .job + .job { border-top: 1px solid var(--line); }
+  .job .top { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; }
+  .job .fname { font-size: 13px; word-break: break-all; }
+  .job .st { font-size: 11.5px; color: var(--fg2); white-space: nowrap; flex-shrink: 0; }
+  .job .st.failed { color: var(--err); }
+  .job .sub { font-size: 11.5px; color: var(--fg3); margin-top: 4px; }
+  .job .err-text { color: var(--err); font-size: 12px; margin-top: 7px; word-break: break-all; }
+  .bar { height: 4px; background: var(--card3); border-radius: 4px; margin-top: 10px; overflow: hidden; }
+  .bar > i { display: block; height: 100%; background: var(--accent); border-radius: 4px; transition: width .5s ease; }
+  .bar.indet > i { width: 32% !important; animation: slide 1.3s ease-in-out infinite; }
+  @keyframes slide {
+    0% { margin-left: -32%; } 100% { margin-left: 100%; }
+  }
+
+  /* ---------- 字幕预览 ---------- */
+  .pv-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; margin-bottom: 14px; flex-wrap: wrap; }
+  .pv-head .t { font-size: 14px; font-weight: 600; word-break: break-all; }
+  .pv-head .o { font-size: 11.5px; color: var(--fg3); margin-top: 5px; }
+  audio { width: 100%; height: 40px; margin-bottom: 12px; border-radius: 99px; }
+  .cues {
+    max-height: min(54vh, 430px); overflow-y: auto;
+    background: var(--card2); border: 1px solid var(--line); border-radius: var(--r-sm);
+  }
+  .cue {
+    display: flex; gap: 12px; padding: 8px 14px; font-size: 13px; line-height: 1.6;
+    border-left: 2px solid transparent; cursor: pointer; transition: background .12s;
+  }
+  .cue:hover { background: rgba(255,255,255,.026); }
+  .cue.on { background: var(--accent-bg); border-left-color: var(--accent); }
+  .cue .ts { font-family: var(--mono); font-size: 11px; color: var(--accent2); padding-top: 3px; min-width: 72px; flex-shrink: 0; }
+  .cue.on .tx { color: #fff; }
+  .noaudio { font-size: 12px; color: var(--fg3); margin-bottom: 10px; }
+
+  ::-webkit-scrollbar { width: 9px; height: 9px; }
+  ::-webkit-scrollbar-thumb { background: var(--line2); border-radius: 9px; border: 2px solid transparent; background-clip: content-box; }
+  ::-webkit-scrollbar-thumb:hover { background: #414A5C; background-clip: content-box; }
+  ::-webkit-scrollbar-track { background: transparent; }
+
+  @media (max-width: 620px) {
+    body { padding: 24px 14px 56px; }
+    .card { padding: 16px; }
+    .acts { margin-left: 0; width: 100%; }
+    .acts select { flex: 1 1 auto; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header class="hero">
+    <div class="mark">
+      <svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round">
+        <path d="M3 12h2M7 8v8M11 4v16M15 7v10M19 11h2"/>
+      </svg>
+    </div>
+    <div>
+      <h1>音频转字幕</h1>
+      <p>阿里云百炼离线转写 · 仅支持普通话 · 识别一次，按场景档位反复导出字幕</p>
+    </div>
+  </header>
+
+  <section class="card">
+    <div class="drop" id="drop">
+      <div class="mark">
+        <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M17 8l-5-5-5 5M12 3v12"/>
+        </svg>
+      </div>
+      <div class="t" id="dropText">拖入音频文件，或点击选择</div>
+      <div class="hint">mp3 / wav / m4a / flac / ogg / aac，也支持视频（mp4 等），上限 1GB</div>
+    </div>
+    <input type="file" id="fileInput" hidden>
+    <input type="file" id="importInput" accept=".json,application/json" hidden>
+
+    <div class="add-row">
+      <div class="field grow">
+        <label>识别模型</label>
+        <div class="fixed-model">Fun-ASR · 普通话</div>
+      </div>
+      <button class="btn solid lg" id="submitBtn" disabled>开始识别</button>
+    </div>
+
+    <div class="foot-note">
+      已有别处导出的识别结果？<button class="link" id="importBtn">导入 .json</button> 免重新识别，直接进入断句环节。
+    </div>
+  </section>
+
+  <section class="card" id="jobCard" style="display:none">
+    <div class="card-head"><h2>进行中的任务</h2></div>
+    <div id="jobList"></div>
+  </section>
+
+  <section class="card">
+    <div class="card-head">
+      <h2>资产库</h2>
+      <span class="cnt" id="assetCnt">0</span>
+    </div>
+    <div class="tabs" id="tabs"></div>
+    <div id="assetList"></div>
+  </section>
+
+  <section class="card" id="previewCard" style="display:none">
+    <div id="previewBody"></div>
+  </section>
+
+</div>
+
+<script>
+const $ = id => document.getElementById(id);
+let selectedFile = null;
+let presets = [], defaultPreset = 'default';
+let activeTab = 'audio';
+let pv = null;
+let assetCache = [];
+
+/* 每行的交互状态（断句档位 / 参数面板是否展开）。
+   资产列表会定时重建 innerHTML，状态不存这里就会在下一轮轮询被顶回默认值。 */
+const draft = {};
+
+const TABS = [
+  { code: 'audio', name: '音频' },
+  { code: 'segments', name: '识别结果' },
+  { code: 'subtitle', name: '字幕' },
+];
+
+const ICON = {
+  audio: '<path d="M9 18V5l10-2v13"/><circle cx="6.5" cy="18" r="2.6"/><circle cx="16.5" cy="16" r="2.6"/>',
+  segments: '<path d="M4 6h16M4 12h16M4 18h10"/>',
+  subtitle: '<path d="M21 12a8 8 0 0 1-8 8H7l-4 3v-9a8 8 0 0 1 8-8h2a8 8 0 0 1 8 6z"/>',
+  empty: '<path d="M3 7.5 12 3l9 4.5v9L12 21l-9-4.5z"/><path d="M3 7.5 12 12l9-4.5M12 12v9"/>',
+};
+
+/* ---------- 工具 ---------- */
+function esc(s) {
+  return String(s === null || s === undefined ? '' : s).replace(/[&<>"']/g,
+    c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
+function fmtDur(sec) {
+  const s = Math.round(sec || 0);
+  return String(Math.floor(s / 60)).padStart(2, '0') + ':' + String(s % 60).padStart(2, '0');
+}
+function fmtTs(ms) {
+  const s = Math.floor(ms / 1000);
+  return String(Math.floor(s / 60)).padStart(2, '0') + ':' + String(s % 60).padStart(2, '0')
+    + '.' + String(Math.floor((ms % 1000) / 100));
+}
+function fmtTime(ts) {
+  const d = new Date(ts * 1000), p = n => String(n).padStart(2, '0');
+  return `${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
+}
+function fmtSize(b) {
+  if (!b) return '';
+  return b > 1048576 ? (b / 1048576).toFixed(1) + ' MB' : Math.round(b / 1024) + ' KB';
+}
+function icon(kind, cls) {
+  return `<svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+    stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" class="${cls}">${ICON[kind]}</svg>`;
+}
+function emptyState(text) {
+  return `<div class="empty">
+    <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.3"
+      stroke-linecap="round" stroke-linejoin="round">${ICON.empty}</svg>
+    <div class="e-t">${esc(text)}</div>
+    <div>上传音频开始识别，或用「导入 .json」复用已有识别结果</div>
+  </div>`;
+}
+
+/* ---------- 状态草稿 ---------- */
+function draftOf(id) {
+  if (!draft[id]) {
+    draft[id] = { preset: defaultPreset, open: false };
+  }
+  return draft[id];
+}
+/* ---------- 初始化 ---------- */
+async function init() {
+  const d = await (await fetch('/api/models')).json();
+  presets = d.presets;
+  defaultPreset = d.default_preset;
+  refreshAssets();
+  refreshJobs();
+}
+
+/* ---------- 上传 ---------- */
+function setFile(f) {
+  selectedFile = f;
+  $('dropText').innerHTML = f
+    ? `<span class="fname">${esc(f.name)}</span> <span class="fsize">${(f.size / 1048576).toFixed(1)} MB</span><br>`
+      + `<span class="fsize">点击可重新选择</span>`
+    : '拖入音频文件，或点击选择';
+  $('submitBtn').disabled = !f;
+}
+const drop = $('drop'), fileInput = $('fileInput');
+drop.onclick = () => fileInput.click();
+fileInput.onchange = () => setFile(fileInput.files[0]);
+drop.ondragover = e => { e.preventDefault(); drop.classList.add('over'); };
+drop.ondragleave = () => drop.classList.remove('over');
+drop.ondrop = e => { e.preventDefault(); drop.classList.remove('over'); setFile(e.dataTransfer.files[0]); };
+
+$('submitBtn').onclick = async () => {
+  if (!selectedFile) return;
+  const fd = new FormData();
+  fd.append('file', selectedFile);
+  $('submitBtn').disabled = true;
+  try {
+    const r = await fetch('/api/jobs', { method: 'POST', body: fd });
+    if (!r.ok) alert((await r.json()).detail || '提交失败');
+    setFile(null); fileInput.value = '';
+    refreshAssets(); refreshJobs();
+  } finally { $('submitBtn').disabled = !selectedFile; }
+};
+
+/* ---------- 导入识别结果 ---------- */
+$('importBtn').onclick = () => $('importInput').click();
+$('importInput').onchange = async () => {
+  const f = $('importInput').files[0];
+  if (!f) return;
+  const fd = new FormData();
+  fd.append('file', f);
+  const r = await fetch('/api/jobs/import', { method: 'POST', body: fd });
+  $('importInput').value = '';
+  if (!r.ok) return alert((await r.json()).detail || '导入失败');
+  activeTab = 'segments';
+  refreshAssets(); refreshJobs();
+};
+
+/* ---------- 资产库 ---------- */
+async function refreshAssets() {
+  const ae = document.activeElement;
+  if (ae && (ae.tagName === 'INPUT' || ae.tagName === 'SELECT')) { setTimeout(refreshAssets, 2500); return; }
+  try {
+    const d = await (await fetch('/api/assets')).json();
+    assetCache = d.assets;
+    const counts = d.counts || {};
+    $('assetCnt').textContent = assetCache.length;
+    $('tabs').innerHTML = TABS.map(t =>
+      `<span class="tab ${t.code === activeTab ? 'on' : ''}" onclick="switchTab('${t.code}')">`
+      + `${t.name}<span class="n">${counts[t.code] || 0}</span></span>`).join('');
+    renderAssets();
+  } catch { setTimeout(refreshAssets, 5000); }
+}
+/* 只按现有数据重画列表，不重新请求 —— 展开面板、切档位都要立刻见效 */
+function renderAssets() {
+  const rows = assetCache.filter(a => a.kind === activeTab);
+  const tabName = (TABS.find(t => t.code === activeTab) || {}).name || '';
+  $('assetList').innerHTML = rows.length ? rows.map(assetRow).join('') : emptyState(`还没有${tabName}`);
+}
+function switchTab(code) { activeTab = code; refreshAssets(); }
+
+function assetRow(a) {
+  const facts = [];
+  if (a.cue_count) facts.push(a.kind === 'segments' ? `${a.cue_count} 句` : `${a.cue_count} 条`);
+  if (a.duration_sec) facts.push(fmtDur(a.duration_sec));
+  if (a.size_bytes) facts.push(fmtSize(a.size_bytes));
+  facts.push(fmtTime(a.created_at));
+
+  const meta = (a.origin && a.origin !== '—'
+      ? `<span class="origin">${esc(a.origin)}</span>` : '')
+    + facts.map(f => `<span>${esc(f)}</span>`).join('');
+
+  const d = draftOf(a.id);
+  let acts = '', panel = '';
+  const del = `<button class="btn danger" onclick="delAsset('${a.id}', ${a.derived_count || 0})">删除</button>`;
+
+  if (a.kind === 'audio') {
+    acts = `<button class="btn${d.open ? '' : ' solid'}" onclick="toggleParams('${a.id}')">`
+      + `${d.open ? '收起' : '重新识别'}</button>` + del;
+    if (d.open) {
+      panel = `<div class="panel">
+        <div class="field">
+          <label>识别模型</label>
+          <div class="fixed-model">Fun-ASR · 普通话</div>
+        </div>
+        <button class="btn solid" onclick="transcribe('${a.id}')">开始识别</button>
+        <button class="btn" onclick="toggleParams('${a.id}')">取消</button>
+      </div>`;
+    }
+  } else if (a.kind === 'segments') {
+    acts = `<select id="s-${a.id}" title="字幕断句档位" onchange="onPresetChange('${a.id}')">${presets.map(p =>
+        `<option value="${esc(p.code)}" title="${esc(p.desc)}" ${p.code === d.preset ? 'selected' : ''}>${esc(p.name)}</option>`).join('')}</select>`
+      + `<button class="btn solid" onclick="genSubtitle('${a.id}')">生成字幕</button>` + del;
+  } else {
+    acts = `<button class="btn solid" onclick="openPreview('${a.id}')">预览</button>
+      <a class="btn" href="/api/assets/${a.id}/file" download>下载</a>` + del;
+  }
+
+  return `<div class="item${d.open ? ' open' : ''}">
+    <div class="row">
+      <div class="ico ${a.kind === 'audio' ? 'a' : a.kind === 'segments' ? 's' : 't'}">${icon(a.kind)}</div>
+      <div class="main">
+        <div class="name ${a.kind === 'subtitle' ? 'pick' : ''}"`
+        + `${a.kind === 'subtitle' ? ` onclick="openPreview('${a.id}')"` : ''}>${esc(a.name)}</div>
+        <div class="meta">${meta}</div>
+      </div>
+      <div class="acts">${acts}</div>
+    </div>
+    ${panel}
+  </div>`;
+}
+
+function toggleParams(id) {
+  const d = draftOf(id);
+  d.open = !d.open;
+  renderAssets();
+}
+function onPresetChange(id) {
+  const sel = $('s-' + id);
+  if (sel) draftOf(id).preset = sel.value;
+}
+
+async function transcribe(id) {
+  const d = draftOf(id);
+  const r = await fetch(`/api/assets/${id}/transcribe`, { method: 'POST' });
+  if (!r.ok) return alert((await r.json()).detail || '提交失败');
+  d.open = false;
+  renderAssets();
+  refreshJobs();
+}
+
+async function genSubtitle(id) {
+  const sel = $('s-' + id);
+  if (!sel) return;
+  const d = draftOf(id);
+  d.preset = sel.value;
+  const fd = new FormData();
+  fd.append('preset', d.preset);
+  const r = await fetch(`/api/assets/${id}/export`, { method: 'POST', body: fd });
+  if (!r.ok) return alert((await r.json()).detail || '提交失败');
+  refreshJobs();
+}
+
+async function delAsset(id, derived) {
+  derived = derived || 0;
+  if (!confirm(derived
+      ? `删除这条资产？\n它还有 ${derived} 条派生资产（识别结果 / 字幕）。`
+      : '删除这条资产？对应文件也会一起删掉。')) return;
+  let cascade = 1;
+  if (derived && !confirm(`是否同时删除这 ${derived} 条派生资产？\n`
+      + `确定 = 一并删除；取消 = 只删本条（那些派生资产的音画联动会失效）`)) cascade = 0;
+  const r = await fetch(`/api/assets/${id}?cascade=${cascade}`, { method: 'DELETE' });
+  if (!r.ok) return alert((await r.json()).detail || '删除失败');
+  const removed = (await r.json()).removed || [];
+  if (removed.length > 1) alert(`已删除 ${removed.length} 条资产`);
+  delete draft[id];
+  if (pv && removed.includes(pv.id)) closePreview();
+  refreshAssets();
+}
+
+/* ---------- 预览 ---------- */
+async function openPreview(id) {
+  const d = await (await fetch(`/api/assets/${id}/preview`)).json();
+  if (d.detail) return alert(d.detail);
+  pv = d;
+  $('previewCard').style.display = '';
+  $('previewBody').innerHTML = `
+    <div class="pv-head">
+      <div>
+        <div class="t">${esc(d.name)}</div>
+        <div class="o">${esc(d.origin)} · ${d.cue_count} 条</div>
+      </div>
+      <button class="btn" onclick="closePreview()">关闭</button>
+    </div>
+    ${d.audio_url
+      ? `<audio id="pvAudio" controls src="${esc(d.audio_url)}"></audio>`
+      : `<div class="noaudio">找不到对应音频（可能已被删除），只能看字幕文本。</div>`}
+    <div class="cues" id="cueBox">
+      ${d.cues.map((c, i) => `<div class="cue" id="cue-${i}" onclick="seek(${Number(c.begin) || 0})">
+        <span class="ts">${fmtTs(c.begin)}</span><span class="tx">${esc(c.text)}</span></div>`).join('')}
+    </div>`;
+  const au = $('pvAudio');
+  if (au) au.addEventListener('timeupdate', syncCue);
+  $('previewCard').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+}
+function closePreview() { pv = null; $('previewCard').style.display = 'none'; }
+
+function cueIndexAt(ms) {
+  if (!pv) return -1;
+  const cs = pv.cues;
+  let lo = 0, hi = cs.length - 1, ans = -1;
+  while (lo <= hi) {
+    const mid = (lo + hi) >> 1;
+    if (cs[mid].begin <= ms) { ans = mid; lo = mid + 1; } else hi = mid - 1;
+  }
+  if (ans >= 0 && ms > cs[ans].end) return -1;
+  return ans;
+}
+function syncCue() {
+  const au = $('pvAudio');
+  if (!au || !pv) return;
+  const i = cueIndexAt(au.currentTime * 1000);
+  if (i === pv._cur) return;
+  if (pv._cur >= 0) { const p = $('cue-' + pv._cur); if (p) p.classList.remove('on'); }
+  pv._cur = i;
+  if (i < 0) return;
+  const el = $('cue-' + i);
+  if (!el) return;
+  el.classList.add('on');
+  const box = $('cueBox');
+  const top = el.offsetTop - box.offsetTop, bot = top + el.offsetHeight;
+  if (top < box.scrollTop || bot > box.scrollTop + box.clientHeight)
+    box.scrollTop = top - box.clientHeight / 2 + el.offsetHeight / 2;
+}
+function seek(ms) {
+  const au = $('pvAudio');
+  if (!au) return;
+  au.currentTime = ms / 1000;
+  au.play();
+}
+
+/* ---------- 任务 ---------- */
+async function refreshJobs() {
+  try {
+    const d = await (await fetch('/api/jobs')).json();
+    const list = d.jobs.filter(j => j.status !== 'done' && j.status !== 'failed');
+    $('jobCard').style.display = list.length ? '' : 'none';
+    $('jobList').innerHTML = list.map(j => {
+      const txt = j.status === 'failed' ? '失败' : j.stage_text;
+      const pct = Math.max(0, Math.min(100, Number(j.progress) || 0));
+      return `<div class="job">
+        <div class="top">
+          <span class="fname">${esc(j.filename)}</span>
+          <span class="st ${j.status === 'failed' ? 'failed' : ''}">${esc(txt)}</span>
+        </div>
+        <div class="sub">${esc(j.model_name)} · 普通话</div>
+        ${j.status === 'failed'
+          ? `<div class="err-text">${esc(j.error)}</div>`
+          : `<div class="bar${pct > 0 ? '' : ' indet'}"><i style="width:${pct}%"></i></div>`}
+      </div>`;
+    }).join('');
+    if (list.length) setTimeout(refreshJobs, 1200);
+    else { refreshAssets(); setTimeout(refreshJobs, 2500); }
+  } catch { setTimeout(refreshJobs, 5000); }
+}
+
+init();
+</script>
+</body>
+</html>

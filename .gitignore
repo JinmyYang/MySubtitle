@@ -1,0 +1,29 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+
+# 运行期产物（素材不入库，只留代码）
+# .gitignore 不支持行尾注释，注释必须单独占一行
+uploads/
+results/
+assets/
+.runtime/
+
+# 待删暂存区：这台机器上直接删除会被重定向到 genie-trash 并弹一堆终端窗口，
+# 所以"删东西"一律先移动到这里，由用户自己抽空清空。绝不能入库。
+# 用前缀通配，这样文件夹改名（用户已经改过一次）也不会漏掉。
+项目垃圾桶_*/
+
+# 测试素材
+测试音频/
+samples/
+
+# IDE / 系统
+.idea/
+.vscode/
+.DS_Store
+*.lnk
+
+# WorkBuddy 工作记忆
+.workbuddy/
